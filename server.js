@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2');
+const bcrypt = require("bcrypt");
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -43,21 +44,22 @@ app.get('/api/topics', (req, res) => {
 // Sử dụng middleware của multer
 // API để thêm topic vào MySQL
 app.post("/api/topics", (req, res) => {
-    const { name, level, description } = req.body;
+    const { name, level, description, topic_avatar } = req.body;
 
     // Kiểm tra nếu dữ liệu không đầy đủ
-    if (!name || !level || !description) {
+    if (!name || !level || !description || !topic_avatar) {
         return res.status(400).json({ error: "All fields are required" });
     }
 
     // Câu lệnh SQL để thêm topic vào cơ sở dữ liệu
-    const sql = "INSERT INTO topics (name, level, description) VALUES (?, ?, ?)";
+    const sql = "INSERT INTO topics (name, level, description, topic_avatar) VALUES (?, ?, ?, ?)";
 
-    db.query(sql, [name, level, description], (err, result) => {
+    db.query(sql, [name, level, description, topic_avatar], (err, result) => {
         if (err) {
             console.error("Lỗi khi thêm topic:", err);
             return res.status(500).json({ error: "Database error" });
         }
+
         // Gửi phản hồi khi thêm thành công
         res.json({ message: "Topic added successfully!", topic_id: result.insertId });
     });
@@ -220,8 +222,6 @@ app.put('/api/english_expressions/:id', (req, res) => {
         });
     });
 });
-
-
 //exercises
 
 // API lấy danh sách dữ liệu english_expressions
@@ -379,7 +379,6 @@ app.post("/api/learn_together", (req, res) => {
 });
 
 // Xóa dữ liệu
-
 app.delete('/api/learn_together/:id', (req, res) => {
     const { id } = req.params; // Lấy ID từ tham số URL
 
@@ -437,7 +436,6 @@ app.put('/api/learn_together/:id', (req, res) => {
         });
     });
 });
-
 
 //exercise_segments
 
@@ -651,6 +649,8 @@ app.get('/api/users_account', (req, res) => {
     });
 });
 
+
+
 // Xóa dữ liệu
 
 app.delete('/api/users_account/:id', (req, res) => {
@@ -708,6 +708,90 @@ const transporter = nodemailer.createTransport({
         user: 'choigamettg@gmail.com',
         pass: 'thuctap123'
     }
+});
+
+app.post("/api/account_admin", async (req, res) => {
+    const { name_admin, password, decentralization } = req.body;
+
+    // Kiểm tra nếu dữ liệu không đầy đủ
+    if (!name_admin || !password || !decentralization) {
+        return res.status(400).json({ error: "All fields are required" });
+    }
+
+    // Kiểm tra xem name_admin đã tồn tại hay chưa
+    const checkQuery = "SELECT COUNT(*) AS count FROM account_admin WHERE name_admin = ?";
+    db.query(checkQuery, [name_admin], async (err, results) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ error: "Database error" });
+        }
+
+        const { count } = results[0];
+        if (count > 0) {
+            return res.status(400).json({ error: "Admin name already exists" });
+        }
+
+        try {
+            // Mã hóa mật khẩu
+            const saltRounds = 10; // Số vòng mã hóa
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+            // Nếu không trùng, tiến hành thêm mới với mật khẩu đã mã hóa
+            const insertQuery = "INSERT INTO account_admin (name_admin, password, decentralization) VALUES (?, ?, ?)";
+            db.query(insertQuery, [name_admin, hashedPassword, decentralization], (err, result) => {
+                if (err) {
+                    console.error("Error while adding admin account:", err);
+                    return res.status(500).json({ error: "Database error" });
+                }
+                res.status(201).json({
+                    message: "Admin account added successfully!",
+                    id_admin: result.insertId,
+                });
+            });
+        } catch (hashError) {
+            console.error("Error while hashing password:", hashError);
+            res.status(500).json({ error: "Error while processing password" });
+        }
+    });
+});
+
+// Đăng nhập API
+app.post("/api/login", async (req, res) => {
+    const { name_admin, password } = req.body;
+
+    // Kiểm tra nếu dữ liệu không đầy đủ
+    if (!name_admin || !password) {
+        return res.status(400).json({ error: "Both fields are required" });
+    }
+
+    // Kiểm tra xem name_admin có tồn tại trong cơ sở dữ liệu không
+    const checkQuery = "SELECT * FROM account_admin WHERE name_admin = ?";
+    db.query(checkQuery, [name_admin], async (err, results) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ error: "Database error" });
+        }
+
+        if (results.length === 0) {
+            return res.status(400).json({ error: "Admin name does not exist" });
+        }
+
+        const user = results[0];
+
+        // Kiểm tra mật khẩu
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        if (!passwordMatch) {
+            return res.status(400).json({ error: "Incorrect password" });
+        }
+
+        // Đăng nhập thành công, trả về thông tin người dùng
+        res.status(200).json({
+            message: "Login successful",
+            id_admin: user.id_admin,
+            name_admin: user.name_admin,
+            decentralization: user.decentralization,
+        });
+    });
 });
 
 
